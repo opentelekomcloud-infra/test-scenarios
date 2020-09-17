@@ -9,11 +9,13 @@
 # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 # License for the specific language governing permissions and limitations
 # under the License.
+import os
 import json
 import yaml
 
 #from urllib.parse import urlparse
 
+import influxdb
 import openstack
 
 #from keystoneauth1 import discover
@@ -63,6 +65,9 @@ def _error(section, service, msg):
 def _warn(section, service, msg):
     return _log('warn', section, service, msg)
 
+def _success(section, service, msg=None):
+    return _log('success', section, service, msg)
+
 
 def validate_catalog_valid(catalog):
     cat = {}
@@ -98,7 +103,7 @@ def validate_service_known_in_region(conn, catalog, config, regions):
         service_in_catalog = catalog.get(service_type)
         if not service_in_catalog:
             _error(
-                'token_catalog', service_type,
+                'token_catalog', service_name,
                 'Service %s is not know in catalog' % service_type)
             continue
         _validate_service_known_in_regions(
@@ -109,13 +114,13 @@ def validate_service_known_in_region(conn, catalog, config, regions):
             'token')
 
         # Validate standalone endpoints for the service are actually same
-#        _validate_service_known_in_regions(
-#            service_name,
-#            service_in_catalog,
-#            conn.identity.endpoints(service_id=service_in_catalog.get('id')),
-#            regions,
-#            'catalog'
-#        )
+        _validate_service_known_in_regions(
+            service_name,
+            service_in_catalog,
+            conn.identity.endpoints(service_id=service_in_catalog.get('id')),
+            regions,
+            'catalog'
+        )
 
 
 def validate_service_supports_version_discovery(conn, catalog, config,
@@ -158,6 +163,44 @@ def validate_service_supports_version_discovery(conn, catalog, config,
                       % service_type)
 
 
+def write_result(influx_client, config):
+    data_points = []
+    services = []
+    for srv in config.get('services'):
+        services.append(list(srv.keys())[0])
+    services.append('general')
+    for service_name in services:
+        result = results.get(service_name, {})
+        point = dict(
+            measurement='scmon1',
+            tags=dict(
+                service_type=service_name,
+            )
+        )
+        point['fields'] = dict(
+            service=service_name,
+            errors=len(result.get('error', [])) or 0,
+            warn=len(result.get('warn', [])) or 0
+        )
+        data_points.append(point)
+    if data_points and influx_client:
+        influx_client.write_points(data_points)
+
+
+def get_influx_client():
+    host = os.environ.get('INFLUXDB_HOST', 'localhost')
+    port = int(os.environ.get('INFLUXDB_PORT', 8086))
+    user = os.environ.get('INFLUXDB_USER')
+    password = os.environ.get('INFLUXDB_PASSWORD')
+    database = os.environ.get('INFLUXDB_DATABASE', 'default')
+    influx = None
+    if host and port and user and password:
+        influx = influxdb.InfluxDBClient(
+            host, port, user, password, database,
+            ssl=True, timeout=5)
+    return influx
+
+
 def main():
     conn = openstack.connect()
     sc_config = read_sc_config('../../service_config.yaml')
@@ -184,6 +227,10 @@ def main():
     )
 
     print(json.dumps(results, sort_keys=True, indent=True))
+
+    influx_client = get_influx_client()
+    if influx_client:
+        write_result(influx_client, sc_config)
 
 
 if __name__ == '__main__':
