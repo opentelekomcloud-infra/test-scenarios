@@ -21,9 +21,6 @@ import openstack
 #from keystoneauth1 import discover
 
 
-openstack.enable_logging(debug=True)
-
-
 results = {}
 
 
@@ -207,7 +204,6 @@ def main():
     project_catalog = conn.config.get_service_catalog().catalog
     normalized_project_catalog = _normalize_catalog(project_catalog)
 
-    #print(normalized_project_catalog)
     regions = [x.id for x in conn.identity.regions()]
 
     validate_catalog_valid(project_catalog)
