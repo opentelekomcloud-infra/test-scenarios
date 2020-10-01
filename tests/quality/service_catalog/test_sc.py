@@ -190,11 +190,12 @@ def get_influx_client():
     user = os.environ.get('INFLUXDB_USER')
     password = os.environ.get('INFLUXDB_PASSWORD')
     database = os.environ.get('INFLUXDB_DATABASE', 'default')
+    ssl = os.environ.get('INFLUXDB_SSL', False)
     influx = None
     if host and port and user and password:
         influx = influxdb.InfluxDBClient(
             host, port, user, password, database,
-            ssl=True, timeout=5)
+            ssl, timeout=5)
     return influx
 
 
